@@ -1,0 +1,9 @@
+huggingface_hub
+mlcroissant
+numpy
+openai
+python-dotenv
+Requests
+scikit_learn
+torch
+transformers
