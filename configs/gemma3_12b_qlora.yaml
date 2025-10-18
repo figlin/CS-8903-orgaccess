@@ -1,5 +1,5 @@
 # Gemma 3 12B Fine-Tuning Configuration for OrgAccess RBAC
-# Optimized for 25,304 training examples with permission reasoning
+# Optimized for H100 PCIe 80GB with 25,304 training examples
 # Based on successful Llama-3.1-8B config but adjusted for Gemma-3's architecture
 
 model:
@@ -31,12 +31,12 @@ lora:
   bias: "none"
   task_type: "CAUSAL_LM"
 
-# Training Hyperparameters - Adjusted for larger 12B model
+# Training Hyperparameters - Optimized for H100 PCIe 80GB
 training:
   num_train_epochs: 3          # Same as Llama (sufficient for 25K examples)
-  per_device_train_batch_size: 2  # REDUCED from 4 (12B is bigger, needs more VRAM)
-  per_device_eval_batch_size: 2   # REDUCED from 4
-  gradient_accumulation_steps: 8  # INCREASED to 8 (effective batch = 2*8 = 16, same as Llama)
+  per_device_train_batch_size: 4  # OPTIMIZED for H100 80GB (was 2 for A40/A100)
+  per_device_eval_batch_size: 4   # Match training batch size
+  gradient_accumulation_steps: 4  # REDUCED from 8 (effective batch = 4*4 = 16, same total)
 
   learning_rate: 8.0e-5        # SLIGHTLY LOWER than Llama (larger models need smaller LR)
   lr_scheduler_type: "cosine"  # Cosine decay works well
@@ -93,7 +93,7 @@ generation:
 
 # Resource limits
 resources:
-  max_memory_mb: 48000         # 48GB for A40/A100 (12B model needs more than 8B)
+  max_memory_mb: 80000         # 80GB for H100 PCIe
 
 # Experiment tracking
 wandb:
@@ -112,10 +112,11 @@ notes: |
 
   KEY DIFFERENCES FROM LLAMA-3.1-8B CONFIG:
   - Model size: 12B vs 8B parameters (~50% larger)
-  - Batch size: REDUCED 4 → 2 per device (12B needs more VRAM)
-  - Gradient accumulation: INCREASED 4 → 8 (maintain effective batch=16)
+  - GPU: H100 PCIe 80GB (vs A40 48GB for Llama-8B)
+  - Batch size: 4 per device (SAME as Llama, thanks to H100's extra VRAM)
+  - Gradient accumulation: 4 (SAME as Llama)
   - Learning rate: SLIGHTLY LOWER 1e-4 → 8e-5 (larger models are more sensitive)
-  - Memory requirement: ~18-22GB VRAM (vs ~12-15GB for Llama-8B)
+  - Memory requirement: ~25-30GB VRAM (vs ~12-15GB for Llama-8B)
 
   COMPARISON TO ORIGINAL ENRON CONFIG (240 examples):
   - Dataset: 100x larger (25,304 vs 240)
@@ -135,20 +136,22 @@ notes: |
   - rejected: Critical permission violations
 
   Training details:
-  - Effective batch size: 16 (2 per device × 8 accumulation)
+  - Effective batch size: 16 (4 per device × 4 accumulation)
   - Steps per epoch: ~1,582 (25,304 / 16)
   - Total steps: ~4,746 (3 epochs)
   - Checkpoints: 9 (every 500 steps)
   - Evaluation: 9 times (every 500 steps)
 
-  Expected training time on A40:
-  - ~6-8 hours total (slower than 8B due to larger model)
-  - ~$5-7 on RunPod
+  Expected training time on H100 PCIe:
+  - ~2.5-3 hours total (H100 is ~2.5x faster than A40)
+  - ~$8-10 on RunPod (~$3.19/hr)
+  - FASTER and CHEAPER than A100 PCIe ($15) or A100 SXM ($13)
 
   Memory requirements:
-  - QLoRA with 4-bit: ~18-22GB VRAM
-  - Recommended: A40 (48GB), A100 (40/80GB), or H100 (80GB)
-  - Will NOT fit on RTX 4090 24GB with batch_size=2 (use batch_size=1 if needed)
+  - QLoRA with 4-bit: ~25-30GB VRAM (batch_size=4)
+  - Recommended: H100 PCIe/SXM (80GB) - BEST performance/cost
+  - Works on: A100 80GB SXM (slower, similar cost)
+  - Will NOT fit: A40 48GB, A100 40GB, RTX 4090 24GB (need batch_size=2)
 
   Gemma-3 Architecture Notes:
   - Uses Rotary Position Embeddings (RoPE) like Llama

@@ -73,6 +73,8 @@ CS-8903-orgaccess/
 # Activate virtual environment
 source venv/bin/activate
 
+git clone https://github.com/figlin/CS-8903-orgaccess.git
+
 # Install training packages
 pip install -r requirements_training.txt
 ```
