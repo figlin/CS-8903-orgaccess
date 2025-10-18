@@ -1,0 +1,67 @@
+{
+  "timestamp": "2025-10-17T19:39:56.899701",
+  "seed": 42,
+  "split_strategy": {
+    "training": "70% of Easy + Medium, split 80/20 for train/val",
+    "benchmark": "30% of Easy + Medium + 100% Hard"
+  },
+  "datasets": {
+    "training_data/train.parquet": 25304,
+    "training_data/validation.parquet": 6326,
+    "benchmark_data/easy_test.parquet": 11484,
+    "benchmark_data/medium_test.parquet": 2073,
+    "benchmark_data/hard_test.parquet": 10613
+  },
+  "label_distributions": [
+    {
+      "name": "train",
+      "total": 25304,
+      "full": 7220,
+      "partial": 8967,
+      "rejected": 8964,
+      "full_pct": 28.533038254821374,
+      "partial_pct": 35.43708504584255,
+      "rejected_pct": 35.425229212772685
+    },
+    {
+      "name": "validation",
+      "total": 6326,
+      "full": 1828,
+      "partial": 2191,
+      "rejected": 2265,
+      "full_pct": 28.89661713563073,
+      "partial_pct": 34.63484034144799,
+      "rejected_pct": 35.80461587100854
+    },
+    {
+      "name": "easy_test",
+      "total": 11484,
+      "full": 3933,
+      "partial": 3752,
+      "rejected": 3741,
+      "full_pct": 34.24764890282132,
+      "partial_pct": 32.6715430163706,
+      "rejected_pct": 32.57575757575758
+    },
+    {
+      "name": "medium_test",
+      "total": 2073,
+      "full": 2,
+      "partial": 943,
+      "rejected": 1127,
+      "full_pct": 0.0964785335262904,
+      "partial_pct": 45.48962855764592,
+      "rejected_pct": 54.365653642064636
+    },
+    {
+      "name": "hard_test",
+      "total": 10613,
+      "full": 24,
+      "partial": 3759,
+      "rejected": 6808,
+      "full_pct": 0.22613775558277585,
+      "partial_pct": 35.41882596815227,
+      "rejected_pct": 64.14774333364741
+    }
+  ]
+}

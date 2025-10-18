@@ -1,0 +1,30 @@
+# Core dependencies
+torch>=2.1.0
+transformers>=4.40.0
+datasets>=2.14.0
+accelerate>=0.27.0
+
+# QLoRA / PEFT
+peft>=0.8.0
+bitsandbytes>=0.42.0
+
+# Optimization
+scipy>=1.11.0
+scikit-learn>=1.3.0
+
+# Configuration
+pyyaml>=6.0
+python-dotenv>=1.0.0
+
+# Monitoring (optional)
+wandb>=0.16.0
+tensorboard>=2.15.0
+
+# Utilities
+tqdm>=4.66.0
+numpy>=1.24.0
+huggingface-hub>=0.20.0
+
+# For evaluation
+openai>=1.12.0  # If testing against OpenAI models
+requests>=2.31.0
