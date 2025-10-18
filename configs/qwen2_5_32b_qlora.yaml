@@ -42,7 +42,7 @@ training:
   lr_scheduler_type: "cosine"  # Cosine decay works well
   warmup_ratio: 0.05           # 5% warmup for stability
   weight_decay: 0.05           # Regularization
-  max_grad_norm: 1.0           # Gradient clipping
+  max_grad_norm: 0.5           # More conservative gradient clipping (prevent explosions)
 
   # Optimization
   optim: "paged_adamw_8bit"    # Memory-efficient optimizer for QLoRA
@@ -54,8 +54,11 @@ training:
   bf16: true                   # Use bfloat16 (H100 optimized)
   fp16: false
 
+  # Memory optimization
+  gradient_checkpointing: true  # Enable gradient checkpointing (saves VRAM)
+
   # Logging and checkpointing
-  logging_steps: 100           # Log every 100 steps
+  logging_steps: 10            # More frequent logging to catch issues early
   save_strategy: "steps"       # Save checkpoints by steps
   save_steps: 500              # Save every 500 steps (~every 1/3 epoch)
   save_total_limit: 3          # Keep only 3 best checkpoints
@@ -64,6 +67,10 @@ training:
   load_best_model_at_end: true # Load best checkpoint at end
   metric_for_best_model: "eval_loss"
   greater_is_better: false
+
+  # Data loading stability
+  dataloader_num_workers: 4    # Parallel data loading
+  dataloader_pin_memory: true  # Faster GPU transfer
 
   # Output
   output_dir: "./outputs/qwen2_5_32b_orgaccess_qlora"

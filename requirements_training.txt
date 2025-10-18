@@ -28,3 +28,4 @@ huggingface-hub>=0.20.0
 # For evaluation
 openai>=1.12.0  # If testing against OpenAI models
 requests>=2.31.0
+hf_transfer
