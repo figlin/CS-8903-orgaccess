@@ -42,6 +42,8 @@ You've already created the training/benchmark splits:
 
 ### Step 2: Install Dependencies
 
+git clone https://github.com/figlin/CS-8903-orgaccess.git
+
 ```bash
 # Activate your virtual environment
 source venv/bin/activate

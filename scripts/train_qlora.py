@@ -237,14 +237,25 @@ def load_and_prepare_data(config: Dict, tokenizer):
 
     print(f"✓ Tokenization complete")
 
-    # Print sample stats
-    sample_lengths = [len(item['input_ids']) for item in tokenized_dataset['train'][:100]]
-    avg_length = sum(sample_lengths) / len(sample_lengths)
-    max_length = max(sample_lengths)
+    # Print sample stats (safely handle batched data)
+    try:
+        # Get a small sample to compute stats
+        sample_size = min(100, len(tokenized_dataset['train']))
+        sample_data = tokenized_dataset['train'].select(range(sample_size))
+        sample_lengths = [len(item['input_ids']) for item in sample_data]
 
-    print(f"\nTokenization statistics (first 100 examples):")
-    print(f"  Average length: {avg_length:.0f} tokens")
-    print(f"  Max length: {max_length} tokens")
+        if sample_lengths:
+            avg_length = sum(sample_lengths) / len(sample_lengths)
+            max_length = max(sample_lengths)
+            min_length = min(sample_lengths)
+
+            print(f"\nTokenization statistics (first {sample_size} examples):")
+            print(f"  Average length: {avg_length:.0f} tokens")
+            print(f"  Max length: {max_length} tokens")
+            print(f"  Min length: {min_length} tokens")
+    except Exception as e:
+        print(f"\n⚠️  Could not compute tokenization stats: {e}")
+        print("  Continuing with training anyway...")
 
     return tokenized_dataset
 
