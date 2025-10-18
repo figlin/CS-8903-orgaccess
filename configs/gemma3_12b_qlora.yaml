@@ -1,0 +1,165 @@
+# Gemma 3 12B Fine-Tuning Configuration for OrgAccess RBAC
+# Optimized for 25,304 training examples with permission reasoning
+# Based on successful Llama-3.1-8B config but adjusted for Gemma-3's architecture
+
+model:
+  base_model: "google/gemma-3-12b-it"  # Latest Gemma 3 instruction-tuned version
+  model_type: "gemma"
+  load_in_4bit: true
+  device_map: "auto"
+
+# QLoRA Configuration - 4-bit quantization for memory efficiency
+qlora:
+  use_qlora: true
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_use_double_quant: true
+
+# LoRA Hyperparameters - Optimized for 12B model with 25K examples
+lora:
+  r: 32                        # Same as Llama config (good for 12B with large dataset)
+  lora_alpha: 64               # Scaling factor (2x rank)
+  lora_dropout: 0.1            # Higher dropout for regularization
+  target_modules:              # Gemma-2 specific attention modules
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+  task_type: "CAUSAL_LM"
+
+# Training Hyperparameters - Adjusted for larger 12B model
+training:
+  num_train_epochs: 3          # Same as Llama (sufficient for 25K examples)
+  per_device_train_batch_size: 2  # REDUCED from 4 (12B is bigger, needs more VRAM)
+  per_device_eval_batch_size: 2   # REDUCED from 4
+  gradient_accumulation_steps: 8  # INCREASED to 8 (effective batch = 2*8 = 16, same as Llama)
+
+  learning_rate: 8.0e-5        # SLIGHTLY LOWER than Llama (larger models need smaller LR)
+  lr_scheduler_type: "cosine"  # Cosine decay works well
+  warmup_ratio: 0.05           # 5% warmup for stability
+  weight_decay: 0.05           # Same regularization as Llama
+  max_grad_norm: 1.0           # Gradient clipping
+
+  # Optimization
+  optim: "paged_adamw_8bit"    # Memory-efficient optimizer for QLoRA
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1.0e-8
+
+  # Mixed precision - Gemma-2 works well with bfloat16
+  bf16: true                   # Use bfloat16 (recommended for A40/A100/H100)
+  fp16: false
+
+  # Logging and checkpointing (same as Llama)
+  logging_steps: 100           # Log every 100 steps
+  save_strategy: "steps"       # Save checkpoints by steps
+  save_steps: 500              # Save every 500 steps (~every 1/3 epoch)
+  save_total_limit: 3          # Keep only 3 best checkpoints
+  eval_strategy: "steps"       # Evaluate by steps
+  eval_steps: 500              # Evaluate every 500 steps
+  load_best_model_at_end: true # Load best checkpoint at end
+  metric_for_best_model: "eval_loss"
+  greater_is_better: false
+
+  # Output
+  output_dir: "./outputs/gemma3_12b_orgaccess_qlora"
+  run_name: "gemma3-12b-orgaccess-qlora-v1"
+
+  # Training stability
+  seed: 42
+  data_seed: 42
+
+  # Early stopping (prevent overfitting)
+  early_stopping_patience: 3       # Stop if no improvement for 3 eval checks
+  early_stopping_threshold: 0.001  # Minimum improvement threshold
+
+# Data Configuration
+data:
+  train_file: "training_data/train.parquet"
+  val_file: "training_data/validation.parquet"
+  max_seq_length: 2048         # Max sequence length (OrgAccess examples fit well)
+  packing: false               # Don't pack (we want individual examples)
+
+# Generation Config (for validation)
+generation:
+  max_new_tokens: 512          # Sufficient for response + rationale
+  temperature: 0.1             # Lower temp for evaluation
+  top_p: 0.9
+  do_sample: false             # Greedy decoding for eval
+
+# Resource limits
+resources:
+  max_memory_mb: 48000         # 48GB for A40/A100 (12B model needs more than 8B)
+
+# Experiment tracking
+wandb:
+  enabled: false               # Set to true to enable WandB tracking
+  project: "orgaccess-finetuning"
+  entity: null                 # Your WandB username (if enabled)
+
+notes: |
+  Fine-tuning configuration for Gemma-3 12B on OrgAccess RBAC benchmark.
+
+  GEMMA-3 IMPROVEMENTS (Released Oct 2024):
+  - Enhanced reasoning capabilities vs Gemma-2
+  - Better instruction following
+  - Improved performance on complex decision-making tasks
+  - Same architecture family, compatible with Gemma-2 configs
+
+  KEY DIFFERENCES FROM LLAMA-3.1-8B CONFIG:
+  - Model size: 12B vs 8B parameters (~50% larger)
+  - Batch size: REDUCED 4 → 2 per device (12B needs more VRAM)
+  - Gradient accumulation: INCREASED 4 → 8 (maintain effective batch=16)
+  - Learning rate: SLIGHTLY LOWER 1e-4 → 8e-5 (larger models are more sensitive)
+  - Memory requirement: ~18-22GB VRAM (vs ~12-15GB for Llama-8B)
+
+  COMPARISON TO ORIGINAL ENRON CONFIG (240 examples):
+  - Dataset: 100x larger (25,304 vs 240)
+  - LoRA rank: 32 (same - good for large dataset)
+  - Learning rate: 8e-5 (vs 3e-4 for Enron - much slower)
+  - Epochs: 3 (vs 10 for Enron - less overfitting risk)
+  - Batch size: Smaller per-device but same effective size via accumulation
+
+  Dataset:
+  - Training: 25,304 examples (70% of Easy+Medium, 80% split)
+  - Validation: 6,326 examples (70% of Easy+Medium, 20% split)
+  - Test: 24,170 examples (30% Easy+Medium + 100% Hard)
+
+  Task: 3-class classification for permission decisions:
+  - full: All permissions satisfied
+  - partial: Some permissions satisfied (collaboration/location)
+  - rejected: Critical permission violations
+
+  Training details:
+  - Effective batch size: 16 (2 per device × 8 accumulation)
+  - Steps per epoch: ~1,582 (25,304 / 16)
+  - Total steps: ~4,746 (3 epochs)
+  - Checkpoints: 9 (every 500 steps)
+  - Evaluation: 9 times (every 500 steps)
+
+  Expected training time on A40:
+  - ~6-8 hours total (slower than 8B due to larger model)
+  - ~$5-7 on RunPod
+
+  Memory requirements:
+  - QLoRA with 4-bit: ~18-22GB VRAM
+  - Recommended: A40 (48GB), A100 (40/80GB), or H100 (80GB)
+  - Will NOT fit on RTX 4090 24GB with batch_size=2 (use batch_size=1 if needed)
+
+  Gemma-3 Architecture Notes:
+  - Uses Rotary Position Embeddings (RoPE) like Llama
+  - SwiGLU activations
+  - Grouped-query attention (GQA)
+  - Enhanced reasoning over Gemma-2 (especially for complex decisions)
+  - Instruction-tuned version (`-it`) recommended for chat format
+  - Released October 2024 as Google's latest open model
+
+  Performance Expectations:
+  - Llama-3.1-8B achieved: 54.8% accuracy, 35.3% F1 on hard split (3.4x paper baseline!)
+  - Gemma-3-12B target: 60-65% accuracy (larger + better reasoning)
+  - Paper baseline: 16% accuracy ± 7%
+  - Goal: 4x improvement over paper baseline
