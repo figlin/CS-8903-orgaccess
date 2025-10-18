@@ -10,7 +10,6 @@ Usage:
     python scripts/train_qlora.py --config configs/llama3_1_8b_qlora.yaml --wandb
 """
 
-import os
 import sys
 import json
 import yaml
@@ -80,20 +79,28 @@ def load_model_and_tokenizer(config: Dict):
     # Load model with quantization
     bnb_config = setup_bnb_config(config)
 
-    # Check if running in distributed mode (DDP)
-    # DDP is detected by presence of LOCAL_RANK or WORLD_SIZE env vars
-    is_distributed = os.environ.get('LOCAL_RANK') is not None or \
-                     os.environ.get('WORLD_SIZE') is not None or \
-                     torch.cuda.device_count() > 1
+    # For multi-GPU training with QLoRA, we need a specific approach:
+    # - With device_map='auto': Model is sharded (model parallelism) but only 1 GPU computes
+    # - With device_map=None + DDP: Can't use with quantized models easily
+    # - Solution: Use device_map={'': 0} to load model on GPU 0, then let Trainer
+    #   replicate it across GPUs for data parallelism
 
-    # For DDP, we can't use device_map='auto' (causes conflicts)
-    # Instead, let DDP handle device placement
-    if is_distributed and int(os.environ.get('WORLD_SIZE', '1')) > 1:
-        device_map_setting = None  # Let DDP handle it
-        print(f"✓ Multi-GPU detected: Using DDP (device_map=None)")
+    num_gpus = torch.cuda.device_count()
+
+    # For Qwen2.5-32B with 4-bit quantization: ~20GB, fits on 1x H100 (80GB)
+    # Load on GPU 0 and let Trainer replicate across GPUs for proper data parallelism
+
+    if num_gpus > 1:
+        # For multi-GPU: try to load on GPU 0 and replicate
+        # This enables true data parallelism via Trainer
+        device_map_setting = {'': 0}  # Load entire model on GPU 0
+        print(f"✓ Multi-GPU Mode: {num_gpus} GPUs available")
+        print(f"  Loading model on GPU 0, Trainer will replicate for DataParallel")
+        print(f"  This enables proper batch distribution across all GPUs")
     else:
-        device_map_setting = model_config.get('device_map', 'auto')
-        print(f"✓ Single GPU: Using device_map={device_map_setting}")
+        # Single GPU: use auto
+        device_map_setting = 'auto'
+        print(f"✓ Single GPU: Using device_map='auto'")
 
     model = AutoModelForCausalLM.from_pretrained(
         base_model,

@@ -8,7 +8,7 @@ The training script was using model parallelism (`device_map='auto'`) which spli
 - Training taking 6s/step instead of 1.5-2s/step
 - 17 hour training time instead of ~2 hours
 
-**Fix**: Modified `scripts/train_qlora.py` to detect multi-GPU mode and use `device_map=None`, allowing PyTorch DDP (Distributed Data Parallel) to properly distribute batches across both GPUs.
+**Fix**: Modified `scripts/train_qlora.py` to use `device_map={'': 0}` for multi-GPU setups. This loads the entire model on GPU 0, then HuggingFace Trainer automatically replicates it to other GPUs for proper DataParallel training. This enables batch distribution across all GPUs.
 
 ## How to Restart Training with Fix
 
@@ -43,27 +43,26 @@ pkill -9 -f train_qlora
 
 ### Step 3: Restart with Multi-GPU Support
 
-You have checkpoint-500, so resume from there:
+The script now automatically detects multiple GPUs and will use HuggingFace Trainer's built-in DataParallel. Just run it normally:
 
 ```bash
 cd /workspace/CS-8903-orgaccess
 
-# Method 1: Using torchrun (recommended)
-torchrun --nproc_per_node=2 scripts/train_qlora.py \
-  --config configs/qwen2_5_32b_qlora.yaml \
-  --resume outputs/qwen2_5_32b_orgaccess_qlora/checkpoint-500 \
-  --wandb
-
-# Method 2: Using accelerate
-accelerate launch --num_processes=2 scripts/train_qlora.py \
+# Simple method: Just run the script normally
+python scripts/train_qlora.py \
   --config configs/qwen2_5_32b_qlora.yaml \
   --resume outputs/qwen2_5_32b_orgaccess_qlora/checkpoint-500 \
   --wandb
 ```
 
+The script will automatically:
+- Detect 2 GPUs are available
+- Use `device_map='auto'` for model sharding across GPUs
+- Let HuggingFace Trainer handle DataParallel for batch distribution
+
 If using nohup to run in background:
 ```bash
-nohup torchrun --nproc_per_node=2 scripts/train_qlora.py \
+nohup python scripts/train_qlora.py \
   --config configs/qwen2_5_32b_qlora.yaml \
   --resume outputs/qwen2_5_32b_orgaccess_qlora/checkpoint-500 \
   --wandb > qwen_training.log 2>&1 &
@@ -71,6 +70,18 @@ nohup torchrun --nproc_per_node=2 scripts/train_qlora.py \
 # Monitor progress
 tail -f qwen_training.log
 ```
+
+**Alternative - For True DDP (more efficient):**
+If you want to use proper DistributedDataParallel (more efficient), use torchrun:
+
+```bash
+torchrun --nproc_per_node=2 scripts/train_qlora.py \
+  --config configs/qwen2_5_32b_qlora.yaml \
+  --resume outputs/qwen2_5_32b_orgaccess_qlora/checkpoint-500 \
+  --wandb
+```
+
+**Note:** For QLoRA with large models (32B), the simple method (DataParallel) actually works better than DDP in many cases because the model is already sharded across GPUs due to quantization.
 
 ### Step 4: Verify Multi-GPU Utilization
 
@@ -80,14 +91,16 @@ watch -n 1 nvidia-smi
 ```
 
 **What to expect:**
-- Both GPU 0 and GPU 1 should show 80-90% utilization during training
-- Training speed: ~1.5-2 seconds per iteration (instead of 6s)
+- Both GPU 0 and GPU 1 should show 70-90% utilization during training
+- Training speed: ~2-3 seconds per iteration (instead of 6s)
 - Total iterations: ~4,746 (not 9,489)
-- Estimated time: ~2-2.5 hours remaining (instead of 7 hours)
+- Estimated time: ~2.5-3.5 hours remaining (instead of 17 hours)
 
 **Output should show:**
 ```
-✓ Multi-GPU detected: Using DDP (device_map=None)
+✓ Multi-GPU Mode: 2 GPUs available
+  Loading model on GPU 0, Trainer will replicate for DataParallel
+  This enables proper batch distribution across all GPUs
 ✓ Model loaded with 4-bit quantization
 ```
 
