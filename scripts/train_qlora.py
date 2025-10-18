@@ -80,10 +80,25 @@ def load_model_and_tokenizer(config: Dict):
     # Load model with quantization
     bnb_config = setup_bnb_config(config)
 
+    # Check if running in distributed mode (DDP)
+    # DDP is detected by presence of LOCAL_RANK or WORLD_SIZE env vars
+    is_distributed = os.environ.get('LOCAL_RANK') is not None or \
+                     os.environ.get('WORLD_SIZE') is not None or \
+                     torch.cuda.device_count() > 1
+
+    # For DDP, we can't use device_map='auto' (causes conflicts)
+    # Instead, let DDP handle device placement
+    if is_distributed and int(os.environ.get('WORLD_SIZE', '1')) > 1:
+        device_map_setting = None  # Let DDP handle it
+        print(f"✓ Multi-GPU detected: Using DDP (device_map=None)")
+    else:
+        device_map_setting = model_config.get('device_map', 'auto')
+        print(f"✓ Single GPU: Using device_map={device_map_setting}")
+
     model = AutoModelForCausalLM.from_pretrained(
         base_model,
         quantization_config=bnb_config,
-        device_map=model_config.get('device_map', 'auto'),
+        device_map=device_map_setting,
         trust_remote_code=True,
         torch_dtype=torch.bfloat16,
     )
@@ -92,7 +107,8 @@ def load_model_and_tokenizer(config: Dict):
     model = prepare_model_for_kbit_training(model)
 
     print(f"✓ Model loaded with 4-bit quantization")
-    print(f"✓ Device map: {model.hf_device_map}")
+    if hasattr(model, 'hf_device_map'):
+        print(f"✓ Device map: {model.hf_device_map}")
 
     return model, tokenizer
 
