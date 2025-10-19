@@ -79,28 +79,18 @@ def load_model_and_tokenizer(config: Dict):
     # Load model with quantization
     bnb_config = setup_bnb_config(config)
 
-    # For multi-GPU training with QLoRA, we need a specific approach:
-    # - With device_map='auto': Model is sharded (model parallelism) but only 1 GPU computes
-    # - With device_map=None + DDP: Can't use with quantized models easily
-    # - Solution: Use device_map={'': 0} to load model on GPU 0, then let Trainer
-    #   replicate it across GPUs for data parallelism
+    # QLoRA with bitsandbytes quantization doesn't support multi-GPU data parallelism
+    # Using device_map='auto' is the recommended approach - it will use single GPU
+    # For Qwen2.5-32B with 4-bit: ~20GB, fits on 1x H100 (80GB)
 
+    device_map_setting = 'auto'
     num_gpus = torch.cuda.device_count()
 
-    # For Qwen2.5-32B with 4-bit quantization: ~20GB, fits on 1x H100 (80GB)
-    # Load on GPU 0 and let Trainer replicate across GPUs for proper data parallelism
-
     if num_gpus > 1:
-        # For multi-GPU: try to load on GPU 0 and replicate
-        # This enables true data parallelism via Trainer
-        device_map_setting = {'': 0}  # Load entire model on GPU 0
-        print(f"✓ Multi-GPU Mode: {num_gpus} GPUs available")
-        print(f"  Loading model on GPU 0, Trainer will replicate for DataParallel")
-        print(f"  This enables proper batch distribution across all GPUs")
+        print(f"✓ {num_gpus} GPUs available - using single GPU for stability")
+        print(f"  (QLoRA doesn't support multi-GPU DataParallel)")
     else:
-        # Single GPU: use auto
-        device_map_setting = 'auto'
-        print(f"✓ Single GPU: Using device_map='auto'")
+        print(f"✓ Single GPU training")
 
     model = AutoModelForCausalLM.from_pretrained(
         base_model,
