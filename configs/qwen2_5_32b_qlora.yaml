@@ -1,5 +1,5 @@
 # Qwen 2.5 32B Fine-Tuning Configuration for OrgAccess RBAC
-# Optimized for 2× H100 PCIe 80GB with 25,304 training examples
+# Optimized for 1× H100 PCIe 80GB with 25,304 training examples
 # Qwen2.5-32B is one of the strongest open models as of Oct 2024
 
 model:
@@ -31,12 +31,12 @@ lora:
   bias: "none"
   task_type: "CAUSAL_LM"
 
-# Training Hyperparameters - Optimized for 2× H100 PCIe (multi-GPU)
+# Training Hyperparameters - Optimized for 1× H100 PCIe (single-GPU)
 training:
   num_train_epochs: 3          # Sufficient for 25K examples
-  per_device_train_batch_size: 2  # Per GPU (2 GPUs × 2 = 4 total per step)
-  per_device_eval_batch_size: 2   # Per GPU
-  gradient_accumulation_steps: 4  # Effective batch = 2*2*4 = 16 (same as others)
+  per_device_train_batch_size: 2  # Batch size per GPU
+  per_device_eval_batch_size: 2   # Eval batch size
+  gradient_accumulation_steps: 8  # Effective batch = 2*8 = 16 (same as others)
 
   learning_rate: 5.0e-5        # LOWER than Gemma/Llama (32B needs careful tuning)
   lr_scheduler_type: "cosine"  # Cosine decay works well
@@ -84,8 +84,6 @@ training:
   early_stopping_patience: 3       # Stop if no improvement for 3 eval checks
   early_stopping_threshold: 0.001  # Minimum improvement threshold
 
-  # Multi-GPU settings (HuggingFace Trainer handles this automatically)
-  ddp_find_unused_parameters: false  # Faster training
 
 # Data Configuration
 data:
@@ -103,7 +101,7 @@ generation:
 
 # Resource limits
 resources:
-  max_memory_mb: 160000        # 160GB total (2× H100 PCIe 80GB each)
+  max_memory_mb: 80000         # 80GB (1× H100 PCIe 80GB)
 
 # Experiment tracking
 wandb:
@@ -122,25 +120,25 @@ notes: |
   - Strong performance on code and structured reasoning
   - Matches or exceeds GPT-3.5/Claude-2 on many benchmarks
 
-  MULTI-GPU SETUP (2× H100 PCIe):
-  - HuggingFace Trainer handles multi-GPU automatically (DDP)
-  - Model sharded across 2 GPUs using device_map="auto"
-  - Batch size: 2 per GPU × 2 GPUs = 4 samples per step
-  - Gradient accumulation: 4 steps → effective batch = 16
-  - ~2x faster than single H100 (~1.5-2 hours total)
+  SINGLE-GPU SETUP (1× H100 PCIe):
+  - QLoRA with 4-bit quantization fits on single H100 80GB
+  - Model loaded with device_map="auto"
+  - Batch size: 2 per step
+  - Gradient accumulation: 8 steps → effective batch = 16
+  - Training time: ~4-5 hours total
 
   KEY DIFFERENCES FROM SMALLER MODELS:
   - Model size: 32B vs 12B (Gemma) or 8B (Llama) - ~2.7-4x larger
   - Learning rate: 5e-5 (LOWEST - large models are very sensitive)
   - Batch size: 2 per device (32B needs more VRAM than 12B)
-  - Memory: ~40-50GB VRAM per GPU (2 GPUs needed)
-  - Training time: ~1.5-2 hours on 2× H100 (vs ~2.5-3hrs for Gemma-12B on 1× H100)
+  - Memory: ~20-25GB VRAM (fits on single H100 with QLoRA)
+  - Training time: ~4-5 hours on 1× H100 (vs ~2.5-3hrs for Gemma-12B)
 
   COMPARISON TO LLAMA-3.1-8B CONFIG:
   - Model size: 32B vs 8B parameters (4x larger)
-  - GPUs: 2× H100 vs 1× A40
+  - GPUs: 1× H100 vs 1× A40
   - Learning rate: 5e-5 vs 1e-4 (2x lower for stability)
-  - Total VRAM: ~80-100GB vs ~12-15GB
+  - Total VRAM: ~20-25GB vs ~12-15GB
   - Expected performance: 65-70% accuracy vs 54.8% (Llama)
 
   Dataset:
@@ -154,23 +152,22 @@ notes: |
   - rejected: Critical permission violations
 
   Training details:
-  - Effective batch size: 16 (2 per GPU × 2 GPUs × 4 accumulation)
+  - Effective batch size: 16 (2 per step × 8 accumulation)
   - Steps per epoch: ~1,582 (25,304 / 16)
   - Total steps: ~4,746 (3 epochs)
   - Checkpoints: 9 (every 500 steps)
   - Evaluation: 9 times (every 500 steps)
 
-  Expected training time on 2× H100 PCIe:
-  - ~1.5-2 hours total (multi-GPU nearly 2x faster than single)
-  - ~$6-7 on RunPod (2× $3.19/hr × 1.5-2hrs)
-  - BEST performance/cost ratio for 32B model
-  - Faster than single H100 SXM and cheaper than alternatives
+  Expected training time on 1× H100 PCIe:
+  - ~4-5 hours total
+  - ~$2-2.50 on RunPod (1× $0.49/hr × 4-5hrs)
+  - Cost-effective for 32B model training
 
-  Memory requirements per GPU:
-  - QLoRA with 4-bit: ~40-50GB VRAM per GPU
-  - Requires: 2× H100 PCIe/SXM (80GB each) ✅ RECOMMENDED
-  - Also works: 2× A100 80GB SXM (slower, similar cost)
-  - Will NOT fit: Single GPU of any kind, A100 40GB
+  Memory requirements:
+  - QLoRA with 4-bit: ~20-25GB VRAM
+  - Requires: 1× H100 PCIe/SXM (80GB) ✅ RECOMMENDED
+  - Also works: 1× A100 80GB (slower, similar cost)
+  - Will NOT fit: A40 (48GB), A100 40GB, RTX 4090
 
   Qwen2.5 Architecture Notes:
   - Transformer architecture with RoPE embeddings
@@ -191,12 +188,11 @@ notes: |
   - Best-in-class reasoning for complex decisions
   - Likely to achieve highest accuracy on hard split
   - Excellent for publication-quality results
-  - Only ~$2-3 more than Gemma-12B training
+  - Similar cost to Gemma-12B training (~$2-3)
   - SOTA open model performance (competitive with GPT-3.5)
 
-  Multi-GPU Training Notes:
-  - Run with: python scripts/train_qlora.py --config configs/qwen2_5_32b_qlora.yaml
-  - HuggingFace Trainer auto-detects GPUs via torch.cuda.device_count()
-  - Uses DistributedDataParallel (DDP) automatically
-  - Model sharding handled by device_map="auto"
-  - No code changes needed - it just works!
+  Training Notes:
+  - Run with: python scripts/train_qlora.py --config configs/qwen2_5_32b_qlora.yaml --wandb
+  - QLoRA 4-bit quantization enables single-GPU training
+  - Model fits comfortably on H100 80GB
+  - device_map="auto" handles memory optimization
