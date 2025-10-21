@@ -42,27 +42,70 @@ import random
 import hashlib
 from pathlib import Path
 from collections import Counter, defaultdict
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional, Tuple, Set
 from tqdm import tqdm
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
+
+
+# ============================================================================
+# INDEX TRACKING
+# ============================================================================
+
+def load_used_indexes(track_file: Path) -> set:
+    """Load previously used source indexes from tracking file."""
+    if not track_file.exists():
+        return set()
+
+    with open(track_file, 'r') as f:
+        data = json.load(f)
+        return set(data.get('used_indexes', []))
+
+
+def save_used_indexes(track_file: Path, used_indexes: set) -> None:
+    """Save used source indexes to tracking file."""
+    track_file.parent.mkdir(parents=True, exist_ok=True)
+
+    data = {
+        'used_indexes': sorted(list(used_indexes)),
+        'total_used': len(used_indexes),
+        'last_updated': str(Path.cwd())
+    }
+
+    with open(track_file, 'w') as f:
+        json.dump(data, f, indent=2)
+
+
+def get_tracking_file_path(input_path: Path, output_path: Path) -> Path:
+    """Generate tracking file path based on input/output files."""
+    # Create tracking file in same directory as output
+    tracking_dir = output_path.parent / '.tracking'
+    tracking_dir.mkdir(parents=True, exist_ok=True)
+
+    # Use hash of input filename to avoid conflicts
+    input_hash = hashlib.md5(input_path.name.encode()).hexdigest()[:8]
+    tracking_file = tracking_dir / f'used_indexes_{input_hash}.json'
+
+    return tracking_file
 
 
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 
-SYSTEM_PROMPT = """You are generating synthetic HARD-level RBAC (Role-Based Access Control) examples for training AI models.
+SYSTEM_PROMPT = """
+You are generating realistic organizational access-control examples for the OrgAccess-style HARD split.
+Write queries as if they were composed by actual employees in a professional but conversational tone
+(e.g., internal chat, email, or ticket request).
 
-Your task is to create realistic organizational queries that would result in FULL access approval.
+The user should sound natural and goal-oriented, not robotic or checklist-driven.
+Mention constraints (regions, vendors, devices, etc.) only when they are naturally relevant.
+Avoid repeating permission names literally; instead, express their intent.
 
-Guidelines:
-1. The user has specific permissions defined in their role
-2. Create a query that FULLY satisfies all active permissions
-3. The query should be realistic and complex (hard-level difficulty)
-4. Include specific details: departments, actions, resources, constraints
-5. Ensure the query exercises multiple permission aspects
-6. The expected response must be "full" (complete approval)
-7. Provide a clear rationale explaining why each permission is satisfied
+For the rationale, write like an internal auditor summarizing why the request is valid,
+not like a machine listing conditions.
+
 
 Output ONLY valid JSON with this exact structure:
 {
@@ -226,15 +269,55 @@ def build_prompt(example: Dict, modified_permissions: Dict) -> str:
     prompt = f"""Input (generate FULL-access query for this role and permissions):
 {json.dumps(input_json, indent=2)}
 
-Generate a realistic, complex organizational query that would result in FULL access approval.
-The query must fully satisfy all permission constraints.
+Below are two examples showing the tone, structure, and reasoning style to follow:
 
-Remember:
-- Make the query specific and detailed (hard-level complexity)
-- Include department names, action types, resource details
-- Ensure all permission fields are respected
-- The query should be something a real user in this role would request
-- Expected response MUST be "full"
+Example 1
+----------
+User Role: Senior_Manager_Sales
+
+Permissions:
+- Departments: Sales, Marketing, Customer Support
+- Access Level: High
+- Allowed Actions: View Sales Reports, Manage Customer Accounts, Generate Sales Forecasts, Escalate Customer Issues, Access Customer Data
+- Rate Limit: 1000 requests
+- Location Restriction: North America, Europe, Asia
+- Export Restriction: True (data cannot be exported externally)
+- Priority Threshold: High, Medium
+- Automation Restriction: False (automation allowed)
+
+Query:
+"I need to generate a detailed sales report for the upcoming quarter, focusing on the North American market. I’ll need to access customer data, including purchase history and feedback, to identify sales trends and make data-driven recommendations. I also want to ensure customer support issues are escalated appropriately and that we comply with all contractual obligations. Additionally, I’d like to review our disaster recovery plans and verify that password rotation policies are current. Please provide access to the required data and tools for this work."
+
+Expected Response: partial
+
+Rationale:
+"The Senior Manager’s request fits within allowed departments and actions (Sales, Marketing, Customer Support) and adheres to the location restrictions for North America. However, the query includes reviewing disaster recovery plans and password rotation, which are outside this role’s permissions, resulting in partial access."
+
+
+Example 2
+----------
+User Role: Marketing_Intern
+
+Permissions:
+- Department: Marketing
+- Access Level: Low
+- Allowed Actions: view marketing reports, access customer feedback data, generate marketing analytics, create social media posts, schedule marketing campaigns
+- Rate Limit: 100 requests
+- Location Restriction: USA, Canada
+- Export Restriction: False (data export permitted)
+- Priority Threshold: Low, Medium
+- Automation Restriction: True (automation not permitted)
+
+Query:
+"I’d like to analyze customer feedback data from the North American region to create a new marketing report. I plan to export this data to a CSV file for deeper analysis. I also want to schedule a campaign targeting high-priority customers in the USA and Canada and automate the weekly generation of marketing analytics reports. Could you grant me the access needed for these tasks?"
+
+Expected Response: partial
+
+Rationale:
+"The intern’s request matches their role and access scope for viewing and analyzing marketing data in the USA and Canada. However, automation is not allowed under their permissions, and high-priority campaign management exceeds their low access level. Therefore, partial access is appropriate."
+
+
+Now generate a new example in this same natural style using the following permission information:
 
 Output JSON:"""
 
@@ -293,6 +376,19 @@ def query_llm(
             headers=headers,
             timeout=timeout
         )
+
+        # Check for errors before raising
+        if response.status_code != 200:
+            error_detail = "Unknown error"
+            try:
+                error_data = response.json()
+                error_detail = error_data.get('detail', error_data.get('error', str(error_data)))
+            except:
+                error_detail = response.text[:200]
+
+            print(f"⚠️  API Error ({response.status_code}): {error_detail}")
+            return None
+
         response.raise_for_status()
 
         # Parse response
@@ -404,6 +500,88 @@ def compute_query_hash(query: str) -> str:
     return hashlib.md5(query.lower().strip().encode()).hexdigest()
 
 
+def generate_single_example(
+    source: Dict,
+    api_url: str,
+    model_name: str,
+    api_key: Optional[str],
+    temperature: float,
+    max_retries: int,
+    required_fields: List[str],
+    seen_hashes: Set[str]
+) -> Optional[Dict]:
+    """
+    Generate a single example from a source.
+
+    Returns:
+        Dict with 'success', 'example', 'strategy', 'source_index', 'error' keys
+    """
+    result = {
+        'success': False,
+        'example': None,
+        'strategy': None,
+        'source_index': source.get('index', -1),
+        'error': None
+    }
+
+    try:
+        # Sample permissions with random strategy
+        modified_perms, strategy = sample_permissions(
+            source.get('permissions', {}),
+            strategy='random',
+            seed=None  # Use random state
+        )
+        result['strategy'] = strategy
+
+        # Build prompt
+        prompt = build_prompt(source, modified_perms)
+
+        # Query LLM with retries
+        generated = None
+        for attempt in range(max_retries):
+            generated = query_llm(
+                prompt=prompt,
+                api_url=api_url,
+                model_name=model_name,
+                api_key=api_key,
+                temperature=temperature
+            )
+
+            if generated:
+                break
+
+        if not generated:
+            result['error'] = 'API call failed'
+            return result
+
+        # Validate
+        if not validate_generated_example(generated, required_fields):
+            result['error'] = 'Validation failed'
+            return result
+
+        # Check for duplicates
+        query_hash = compute_query_hash(generated['query'])
+        if query_hash in seen_hashes:
+            result['error'] = 'Duplicate query'
+            return result
+
+        # Add metadata
+        generated['source_index'] = source.get('index', -1)
+        generated['generation_strategy'] = strategy
+        generated['synthetic'] = True
+
+        # Success!
+        result['success'] = True
+        result['example'] = generated
+        result['query_hash'] = query_hash
+
+        return result
+
+    except Exception as e:
+        result['error'] = str(e)
+        return result
+
+
 # ============================================================================
 # OUTPUT HANDLING
 # ============================================================================
@@ -451,7 +629,8 @@ def generate_examples(
     api_key: Optional[str] = None,
     seed: int = 42,
     max_retries: int = 3,
-    temperature: float = 0.8
+    temperature: float = 0.8,
+    batch_workers: int = 4
 ) -> None:
     """
     Main generation pipeline.
@@ -477,6 +656,27 @@ def generate_examples(
         print("❌ No source examples found!")
         return
 
+    # Load/initialize index tracking
+    tracking_file = get_tracking_file_path(input_path, output_path)
+    used_indexes = load_used_indexes(tracking_file)
+
+    # Filter out already-used source examples
+    available_examples = [ex for ex in source_examples
+                          if ex.get('index', -1) not in used_indexes]
+
+    if not available_examples:
+        print("⚠️  All source examples have been used!")
+        print(f"   Total source examples: {len(source_examples):,}")
+        print(f"   Already used: {len(used_indexes):,}")
+        print(f"   Consider using a different input file or clearing tracking data.")
+        return
+
+    print(f"\n📊 Source Index Tracking:")
+    print(f"   Total source examples: {len(source_examples):,}")
+    print(f"   Already used: {len(used_indexes):,}")
+    print(f"   Available: {len(available_examples):,}")
+    print(f"   Tracking file: {tracking_file}")
+
     # Statistics tracking
     stats = {
         'total_attempts': 0,
@@ -485,13 +685,35 @@ def generate_examples(
         'failed_validation': 0,
         'duplicates': 0,
         'strategies': Counter(),
+        'reused_indexes': 0,
     }
 
     generated_examples = []
     seen_hashes = set()
+    new_used_indexes = set()
 
     # Required fields for validation
     required_fields = ['user_role', 'permissions', 'query', 'expected_response', 'rationale']
+
+    # Setup interruption handler for graceful save on Ctrl+C
+    def save_partial_results():
+        """Save partial results when interrupted."""
+        if generated_examples:
+            # Generate interrupted filename
+            timestamp = Path(output_path).stem
+            interrupted_path = output_path.parent / f"{timestamp}_INTERRUPTED_{len(generated_examples)}.jsonl"
+
+            save_output(generated_examples, interrupted_path, format='jsonl')
+
+            # Also save index tracking
+            all_used_indexes = used_indexes.union(new_used_indexes)
+            save_used_indexes(tracking_file, all_used_indexes)
+
+            print(f"\n⚠️  Interrupted! Saved {len(generated_examples):,} partial results to:")
+            print(f"   {interrupted_path}")
+            print(f"\n✓ Index tracking updated - can resume later without reusing these sources")
+        else:
+            print(f"\n⚠️  Interrupted! No examples generated yet.")
 
     print(f"\n{'='*80}")
     print(f"GENERATING {num_examples:,} FULL-ACCESS EXAMPLES")
@@ -500,73 +722,105 @@ def generate_examples(
     print(f"Model: {model_name}")
     print(f"Random seed: {seed}")
     print(f"Temperature: {temperature}")
+    print(f"Parallel workers: {batch_workers}")
     print(f"{'='*80}\n")
 
-    # Generation loop with progress bar
+    # Check if we have enough available examples
+    if len(available_examples) < num_examples:
+        print(f"⚠️  Warning: Only {len(available_examples):,} unused examples available")
+        print(f"   Requested: {num_examples:,} examples")
+        print(f"   Will reuse some source examples after exhausting available pool\n")
+
+    # Prepare source examples for parallel processing
+    # Pre-select sources to ensure we get exactly num_examples attempts
+    selected_sources = []
+    for _ in range(num_examples * 2):  # Request 2x to handle failures
+        if available_examples:
+            source = random.choice(available_examples)
+            available_examples.remove(source)
+            selected_sources.append(source)
+        else:
+            source = random.choice(source_examples)
+            selected_sources.append(source)
+            stats['reused_indexes'] += 1
+
+    # Generation loop with parallel workers
+    progress_lock = Lock()
     pbar = tqdm(total=num_examples, desc="Generating examples")
 
-    while len(generated_examples) < num_examples:
-        stats['total_attempts'] += 1
+    try:
+        with ThreadPoolExecutor(max_workers=batch_workers) as executor:
+            # Submit all tasks
+            futures = []
+            for source in selected_sources:
+                if len(generated_examples) >= num_examples:
+                    break
 
-        # Sample a source example
-        source = random.choice(source_examples)
+                future = executor.submit(
+                    generate_single_example,
+                    source,
+                    api_url,
+                    model_name,
+                    api_key,
+                    temperature,
+                    max_retries,
+                    required_fields,
+                    seen_hashes
+                )
+                futures.append(future)
 
-        # Sample permissions with random strategy
-        modified_perms, strategy = sample_permissions(
-            source.get('permissions', {}),
-            strategy='random',
-            seed=None  # Use random state
-        )
-        stats['strategies'][strategy] += 1
+            # Process completed tasks
+            for future in as_completed(futures):
+                if len(generated_examples) >= num_examples:
+                    break
 
-        # Build prompt
-        prompt = build_prompt(source, modified_perms)
+                result = future.result()
 
-        # Query LLM with retries
-        generated = None
-        for attempt in range(max_retries):
-            generated = query_llm(
-                prompt=prompt,
-                api_url=api_url,
-                model_name=model_name,
-                api_key=api_key,
-                temperature=temperature
-            )
+                with progress_lock:
+                    stats['total_attempts'] += 1
 
-            if generated:
-                break
+                    # Track source index
+                    source_idx = result['source_index']
+                    new_used_indexes.add(source_idx)
 
-        if not generated:
-            stats['failed_api'] += 1
-            continue
+                    # Track strategy
+                    if result['strategy']:
+                        stats['strategies'][result['strategy']] += 1
 
-        # Validate
-        if not validate_generated_example(generated, required_fields):
-            stats['failed_validation'] += 1
-            continue
+                    # Handle result
+                    if result['success']:
+                        # Check for duplicates again (thread-safe)
+                        query_hash = result['query_hash']
+                        if query_hash not in seen_hashes:
+                            generated_examples.append(result['example'])
+                            seen_hashes.add(query_hash)
+                            stats['successful'] += 1
+                            pbar.update(1)
+                        else:
+                            stats['duplicates'] += 1
+                    else:
+                        # Handle failure
+                        error = result.get('error', '')
+                        if 'API call failed' in error:
+                            stats['failed_api'] += 1
+                        elif 'Validation failed' in error:
+                            stats['failed_validation'] += 1
+                        elif 'Duplicate' in error:
+                            stats['duplicates'] += 1
 
-        # Check for duplicates
-        query_hash = compute_query_hash(generated['query'])
-        if query_hash in seen_hashes:
-            stats['duplicates'] += 1
-            continue
-
-        # Add metadata
-        generated['source_index'] = source.get('index', -1)
-        generated['generation_strategy'] = strategy
-        generated['synthetic'] = True
-
-        # Success!
-        generated_examples.append(generated)
-        seen_hashes.add(query_hash)
-        stats['successful'] += 1
-
-        pbar.update(1)
+    except KeyboardInterrupt:
+        pbar.close()
+        save_partial_results()
+        return
 
     pbar.close()
 
     # Save output
     save_output(generated_examples, output_path, format='jsonl')
+
+    # Save updated index tracking
+    all_used_indexes = used_indexes.union(new_used_indexes)
+    save_used_indexes(tracking_file, all_used_indexes)
 
     # Print summary
     print(f"\n{'='*80}")
@@ -578,6 +832,13 @@ def generate_examples(
     print(f"Failed (API errors):    {stats['failed_api']:,}")
     print(f"Failed (validation):    {stats['failed_validation']:,}")
     print(f"Duplicates skipped:     {stats['duplicates']:,}")
+    if stats['reused_indexes'] > 0:
+        print(f"Reused source indexes:  {stats['reused_indexes']:,}")
+    print(f"\nIndex tracking:")
+    print(f"  Previously used:      {len(used_indexes):,}")
+    print(f"  Newly used:           {len(new_used_indexes):,}")
+    print(f"  Total used:           {len(all_used_indexes):,}")
+    print(f"  Remaining available:  {len(source_examples) - len(all_used_indexes):,}")
     print(f"\nStrategy breakdown:")
     for strategy, count in sorted(stats['strategies'].items()):
         percentage = count / stats['total_attempts'] * 100
@@ -659,12 +920,34 @@ def main():
         help='Maximum retries per example on API failure (default: 3)'
     )
 
+    parser.add_argument(
+        '--reset-tracking',
+        action='store_true',
+        help='Reset index tracking (start fresh, ignore previously used indexes)'
+    )
+
+    parser.add_argument(
+        '--batch-workers',
+        type=int,
+        default=4,
+        help='Number of parallel workers for concurrent generation (default: 4, range: 1-16)'
+    )
+
     args = parser.parse_args()
 
     # Validate inputs
     if not args.input.exists():
         print(f"❌ Error: Input file not found: {args.input}")
         sys.exit(1)
+
+    # Handle tracking reset
+    if args.reset_tracking:
+        tracking_file = get_tracking_file_path(args.input, args.output)
+        if tracking_file.exists():
+            tracking_file.unlink()
+            print(f"✓ Reset index tracking: {tracking_file}")
+        else:
+            print(f"ℹ️  No tracking file found to reset")
 
     # Run generation
     try:
@@ -677,7 +960,8 @@ def main():
             api_key=args.api_key,
             seed=args.seed,
             max_retries=args.max_retries,
-            temperature=args.temperature
+            temperature=args.temperature,
+            batch_workers=args.batch_workers
         )
     except KeyboardInterrupt:
         print("\n\n⚠️  Generation interrupted by user")
