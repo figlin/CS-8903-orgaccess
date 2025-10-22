@@ -68,19 +68,28 @@ def load_jsonl(file_path: Path) -> List[Dict[str, Any]]:
     return data
 
 
-def clean_data(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def clean_data(data: List[Dict[str, Any]], target_schema=None) -> List[Dict[str, Any]]:
     """
     Clean and standardize data structure.
 
     Args:
         data: List of dictionaries
+        target_schema: Optional PyArrow schema to match
 
     Returns:
         Cleaned data
     """
+    import pyarrow as pa
+
     cleaned = []
 
     required_fields = {'user_role', 'permissions', 'query', 'expected_response'}
+
+    # Get field names and types from target schema if provided
+    if target_schema:
+        schema_fields = {name: field.type for name, field in zip(target_schema.names, target_schema)}
+    else:
+        schema_fields = None
 
     for i, item in enumerate(data):
         # Check required fields
@@ -89,17 +98,36 @@ def clean_data(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             print(f"⚠️  Warning: Skipping item {i} - missing fields: {missing}")
             continue
 
-        # Keep only core fields (remove synthetic metadata)
-        cleaned_item = {
-            'user_role': item['user_role'],
-            'permissions': item['permissions'],
-            'query': item['query'],
-            'expected_response': item['expected_response'],
-        }
+        # If we have a target schema, use its fields
+        if schema_fields:
+            cleaned_item = {}
+            for field_name, field_type in schema_fields.items():
+                if field_name in item:
+                    value = item[field_name]
 
-        # Include rationale if present
-        if 'rationale' in item:
-            cleaned_item['rationale'] = item['rationale']
+                    # Convert permissions dict to JSON string if needed
+                    if field_name == 'permissions' and isinstance(value, dict):
+                        if pa.types.is_string(field_type):
+                            # Target wants string, convert dict to JSON
+                            value = json.dumps(value)
+                        # Otherwise keep as dict
+
+                    cleaned_item[field_name] = value
+                else:
+                    # Add missing fields as None
+                    cleaned_item[field_name] = None
+        else:
+            # Keep only core fields (remove synthetic metadata)
+            cleaned_item = {
+                'user_role': item['user_role'],
+                'permissions': item['permissions'],
+                'query': item['query'],
+                'expected_response': item['expected_response'],
+            }
+
+            # Include rationale if present
+            if 'rationale' in item:
+                cleaned_item['rationale'] = item['rationale']
 
         cleaned.append(cleaned_item)
 
@@ -126,28 +154,54 @@ def convert_to_parquet(
     data = load_jsonl(input_path)
     print(f"✓ Loaded {len(data):,} records")
 
-    print("Cleaning data...")
-    data = clean_data(data)
-    print(f"✓ Cleaned to {len(data):,} valid records")
-
-    if len(data) == 0:
-        print("❌ No valid data to convert")
-        return
-
-    # Convert to PyArrow table
-    print("Converting to PyArrow table...")
-    table = pa.Table.from_pylist(data)
-
     # Merge with existing if requested
     if merge and output_path.exists():
         print(f"Loading existing data from {output_path}...")
         existing_table = pq.read_table(output_path)
         print(f"✓ Existing data: {len(existing_table):,} records")
 
+        print("Cleaning data to match existing schema...")
+        data = clean_data(data, target_schema=existing_table.schema)
+        print(f"✓ Cleaned to {len(data):,} valid records")
+
+        if len(data) == 0:
+            print("❌ No valid data to convert")
+            return
+
+        # Convert to PyArrow table using the existing schema
+        print("Converting to PyArrow table with matching schema...")
+        try:
+            table = pa.Table.from_pylist(data, schema=existing_table.schema)
+        except Exception as e:
+            print(f"⚠️  Warning: Could not match existing schema exactly: {e}")
+            print("Attempting to cast to existing schema...")
+            table = pa.Table.from_pylist(data)
+
+            # Try to cast to existing schema
+            try:
+                table = table.cast(existing_table.schema)
+            except Exception as e2:
+                print(f"❌ Error: Schema mismatch - {e2}")
+                print(f"\nExisting schema:\n{existing_table.schema}")
+                print(f"\nNew data schema:\n{table.schema}")
+                raise
+
         # Concatenate tables
         print("Merging tables...")
         table = pa.concat_tables([existing_table, table])
         print(f"✓ Merged total: {len(table):,} records")
+    else:
+        print("Cleaning data...")
+        data = clean_data(data)
+        print(f"✓ Cleaned to {len(data):,} valid records")
+
+        if len(data) == 0:
+            print("❌ No valid data to convert")
+            return
+
+        # Convert to PyArrow table
+        print("Converting to PyArrow table...")
+        table = pa.Table.from_pylist(data)
 
     # Write parquet
     print(f"Writing to {output_path}...")
