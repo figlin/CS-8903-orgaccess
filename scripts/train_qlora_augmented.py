@@ -149,6 +149,9 @@ def setup_lora(model, config: Dict):
 
 def load_and_prepare_data(config: Dict, tokenizer):
     """Load and tokenize training/validation data from augmented parquet files"""
+    # Get data config for other settings (max_seq_length, etc)
+    data_config = config['data']
+
     # MODIFIED FOR AUGMENTED DATA: Use training_data/addOn_training_data/
     # Override config paths to use augmented dataset
     train_file = 'training_data/addOn_training_data/train.parquet'
