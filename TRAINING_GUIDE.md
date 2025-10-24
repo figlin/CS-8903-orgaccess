@@ -60,6 +60,24 @@ You need access to Llama-3.1-8B-Instruct:
 # Login to Hugging Face
 huggingface-cli login
 
+
+Create session	tmux new -s NAME
+List sessions	tmux ls
+Attach to session	tmux attach -t NAME
+
+huggingface-cli download mhzacc/qwen2_5_32b_orgaccess_qlora-addOn \
+    --local-dir models/Qwen/Qwen2.5-32B-Instruct-checkpoint-1500 \
+    --repo-type model
+
+python scripts/train_qlora_augmented.py \
+    --config configs/llama3_1_8b_qlora.yaml \
+    --resume models/Qwen/Qwen2.5-32B-Instruct-checkpoint-1500 \
+    --wandb
+
+huggingface-cli upload mhzacc/gemma3-12b-orgAccess-finetuned_addOn-full \
+  outputs/ \
+  --repo-type model --private
+
 # Enter your token when prompted
 # Get token from: https://huggingface.co/settings/tokens
 ```

@@ -1,8 +1,8 @@
-Loaded 11,484 predictions from results/llama-3.1-8b-finetuned/addOn/benchmark/results_vllm_easy_20251022_125655.json
+Loaded 11,484 predictions from results/gemma3-12b-finetuned/addOn/benchmark/results_vllm_easy_20251022_154022.json
 Detected difficulty level: easy
 
 ================================================================================
-EVALUATION RESULTS: results_vllm_easy_20251022_125655.json
+EVALUATION RESULTS: results_vllm_easy_20251022_154022.json
 ================================================================================
 Difficulty Level: EASY
 Total Samples:    11,484
@@ -10,11 +10,11 @@ Total Samples:    11,484
 --------------------------------------------------------------------------------
 OVERALL METRICS
 --------------------------------------------------------------------------------
-Accuracy:          0.7598 (75.98%)
-F1 (Macro):        0.7579
-F1 (Weighted):     0.7580
-Precision (Macro): 0.7604
-Recall (Macro):    0.7604
+Accuracy:          0.7820 (78.20%)
+F1 (Macro):        0.7823
+F1 (Weighted):     0.7824
+Precision (Macro): 0.7850
+Recall (Macro):    0.7826
 
 --------------------------------------------------------------------------------
 PER-CLASS METRICS
@@ -22,9 +22,9 @@ PER-CLASS METRICS
 
 Class        Precision    Recall       F1-Score     Support   
 --------------------------------------------------------------------------------
-full         0.8108       0.6948       0.7484       3,942     
-partial      0.6700       0.6864       0.6781       3,753     
-rejected     0.8003       0.9000       0.8472       3,789     
+full         0.8210       0.7260       0.7706       3,942     
+partial      0.6764       0.7373       0.7055       3,753     
+rejected     0.8577       0.8844       0.8708       3,789     
 
 --------------------------------------------------------------------------------
 CONFUSION MATRIX
@@ -32,24 +32,24 @@ CONFUSION MATRIX
 
                     Predicted
                 Full      Partial   Rejected
-Actual Full       2,739       949       254
-      Partial       580     2,576       597
-      Rejected       59       320     3,410
+Actual Full       2,862       934       146
+      Partial       576     2,767       410
+      Rejected       48       390     3,351
 
 --------------------------------------------------------------------------------
 PER-CLASS ACCURACY
 --------------------------------------------------------------------------------
-Full        2,739 /  3,942 correct  ( 69.48%)
-Partial     2,576 /  3,753 correct  ( 68.64%)
-Rejected    3,410 /  3,789 correct  ( 90.00%)
+Full        2,862 /  3,942 correct  ( 72.60%)
+Partial     2,767 /  3,753 correct  ( 73.73%)
+Rejected    3,351 /  3,789 correct  ( 88.44%)
 
 ================================================================================
 
-Loaded 2,073 predictions from results/llama-3.1-8b-finetuned/addOn/benchmark/results_vllm_medium_20251022_124945.json
+Loaded 2,073 predictions from results/gemma3-12b-finetuned/addOn/benchmark/results_vllm_medium_20251022_154703.json
 Detected difficulty level: medium
 
 ================================================================================
-EVALUATION RESULTS: results_vllm_medium_20251022_124945.json
+EVALUATION RESULTS: results_vllm_medium_20251022_154703.json
 ================================================================================
 Difficulty Level: MEDIUM
 Total Samples:    2,073
@@ -57,11 +57,11 @@ Total Samples:    2,073
 --------------------------------------------------------------------------------
 OVERALL METRICS
 --------------------------------------------------------------------------------
-Accuracy:          0.5263 (52.63%)
-F1 (Macro):        0.3382
-F1 (Weighted):     0.4981
-Precision (Macro): 0.3756
-Recall (Macro):    0.3659
+Accuracy:          0.5765 (57.65%)
+F1 (Macro):        0.3847
+F1 (Weighted):     0.5770
+Precision (Macro): 0.3871
+Recall (Macro):    0.3870
 
 --------------------------------------------------------------------------------
 PER-CLASS METRICS
@@ -70,8 +70,8 @@ PER-CLASS METRICS
 Class        Precision    Recall       F1-Score     Support   
 --------------------------------------------------------------------------------
 full         0.0000       0.0000       0.0000       2         
-partial      0.4877       0.7964       0.6049       943       
-rejected     0.6391       0.3014       0.4096       1,128     
+partial      0.5299       0.6204       0.5716       943       
+rejected     0.6315       0.5408       0.5826       1,128     
 
 --------------------------------------------------------------------------------
 CONFUSION MATRIX
@@ -79,24 +79,25 @@ CONFUSION MATRIX
 
                     Predicted
                 Full      Partial   Rejected
-Actual Full           0         1         1
-      Partial         1       751       191
-      Rejected        0       788       340
+Actual Full           0         2         0
+      Partial         2       585       356
+      Rejected        1       517       610
 
 --------------------------------------------------------------------------------
 PER-CLASS ACCURACY
 --------------------------------------------------------------------------------
 Full            0 /      2 correct  (  0.00%)
-Partial       751 /    943 correct  ( 79.64%)
-Rejected      340 /  1,128 correct  ( 30.14%)
+Partial       585 /    943 correct  ( 62.04%)
+Rejected      610 /  1,128 correct  ( 54.08%)
 
 ================================================================================
 
-Loaded 10,613 predictions from results/llama-3.1-8b-finetuned/addOn/benchmark/results_vllm_hard_20251022_123702.json
+
+Loaded 10,613 predictions from results/gemma3-12b-finetuned/addOn/benchmark/results_vllm_hard_20251022_162434.json
 Detected difficulty level: hard
 
 ================================================================================
-EVALUATION RESULTS: results_vllm_hard_20251022_123702.json
+EVALUATION RESULTS: results_vllm_hard_20251022_162434.json
 ================================================================================
 Difficulty Level: HARD
 Total Samples:    10,613
@@ -104,11 +105,11 @@ Total Samples:    10,613
 --------------------------------------------------------------------------------
 OVERALL METRICS
 --------------------------------------------------------------------------------
-Accuracy:          0.4745 (47.45%)
-F1 (Macro):        0.3160
-F1 (Weighted):     0.4650
-Precision (Macro): 0.3596
-Recall (Macro):    0.3571
+Accuracy:          0.5874 (58.74%)
+F1 (Macro):        0.3579
+F1 (Weighted):     0.5801
+Precision (Macro): 0.3594
+Recall (Macro):    0.3581
 
 --------------------------------------------------------------------------------
 PER-CLASS METRICS
@@ -117,8 +118,8 @@ PER-CLASS METRICS
 Class        Precision    Recall       F1-Score     Support   
 --------------------------------------------------------------------------------
 full         0.0000       0.0000       0.0000       24        
-partial      0.3785       0.7437       0.5017       3,765     
-rejected     0.7003       0.3277       0.4464       6,824     
+partial      0.4103       0.3588       0.3828       3,765     
+rejected     0.6679       0.7156       0.6909       6,824     
 
 --------------------------------------------------------------------------------
 CONFUSION MATRIX
@@ -126,15 +127,15 @@ CONFUSION MATRIX
 
                     Predicted
                 Full      Partial   Rejected
-Actual Full           0        18         6
-      Partial        14     2,800       951
-      Rejected        9     4,579     2,236
+Actual Full           0         4        20
+      Partial         6     1,351     2,408
+      Rejected        3     1,938     4,883
 
 --------------------------------------------------------------------------------
 PER-CLASS ACCURACY
 --------------------------------------------------------------------------------
 Full            0 /     24 correct  (  0.00%)
-Partial     2,800 /  3,765 correct  ( 74.37%)
-Rejected    2,236 /  6,824 correct  ( 32.77%)
+Partial     1,351 /  3,765 correct  ( 35.88%)
+Rejected    4,883 /  6,824 correct  ( 71.56%)
 
 ================================================================================
