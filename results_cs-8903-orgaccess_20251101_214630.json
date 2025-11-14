@@ -1,0 +1,86 @@
+{
+  "timestamp": "2025-11-01T21:46:30.082496",
+  "model": "ft:gpt-4o-mini-2024-07-18:personal-gatech-research-course:cs-8903-orgaccess:CXCg9cBh",
+  "max_samples": null,
+  "results": {
+    "hard-00000-of-00001": {
+      "file": "data/hard-00000-of-00001.parquet",
+      "total_samples": 10613,
+      "metrics": {
+        "accuracy": 0.4963648380700595,
+        "f1_macro": 0.33119138631957085,
+        "f1_weighted": 0.49812570278615936,
+        "confusion_matrix": [
+          [
+            0,
+            15,
+            9
+          ],
+          [
+            0,
+            2540,
+            1219
+          ],
+          [
+            0,
+            4091,
+            2717
+          ]
+        ]
+      },
+      "errors": 14,
+      "error_details": [
+        {
+          "index": 41,
+          "error": "Rate limit exceeded after 5 retries",
+          "user_role": "Senior_Manager_Marketing"
+        },
+        {
+          "index": 40,
+          "error": "Rate limit exceeded after 5 retries",
+          "user_role": "Senior_Manager_Marketing"
+        },
+        {
+          "index": 39,
+          "error": "Rate limit exceeded after 5 retries",
+          "user_role": "Marketing_Coordinator"
+        },
+        {
+          "index": 47,
+          "error": "Rate limit exceeded after 5 retries",
+          "user_role": "Marketing_Team_Lead"
+        },
+        {
+          "index": 48,
+          "error": "Rate limit exceeded after 5 retries",
+          "user_role": "VP_Engineering"
+        },
+        {
+          "index": 49,
+          "error": "Rate limit exceeded after 5 retries",
+          "user_role": "Operations_Manager"
+        },
+        {
+          "index": 53,
+          "error": "Rate limit exceeded after 5 retries",
+          "user_role": "Marketing_Intern"
+        },
+        {
+          "index": 56,
+          "error": "Rate limit exceeded after 5 retries",
+          "user_role": "Senior_Marketing_Specialist"
+        },
+        {
+          "index": 57,
+          "error": "Rate limit exceeded after 5 retries",
+          "user_role": "IT_Manager"
+        },
+        {
+          "index": 60,
+          "error": "Rate limit exceeded after 5 retries",
+          "user_role": "Data_Analyst"
+        }
+      ]
+    }
+  }
+}

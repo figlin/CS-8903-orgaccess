@@ -14,6 +14,7 @@ Usage:
 import argparse
 import json
 import sys
+import warnings
 from pathlib import Path
 from collections import Counter
 from sklearn.metrics import (
@@ -25,6 +26,9 @@ from sklearn.metrics import (
     confusion_matrix
 )
 from datasets import load_dataset
+
+# Suppress sklearn warnings about undefined metrics
+warnings.filterwarnings('ignore', category=UserWarning, module='sklearn')
 
 
 def normalize_label(label):
@@ -111,30 +115,10 @@ def extract_predictions_from_results(results_data):
     """
     Extract predictions and ground truth from results JSON.
 
-    Results JSON structure can be either:
-    1. New format:
-    {
-        "results": {
-            "<difficulty>": {
-                "predictions": [
-                    {
-                        "prediction": "full",
-                        "ground_truth": "partial",
-                        ...
-                    },
-                    ...
-                ]
-            }
-        }
-    }
-    2. Old format:
-    {
-        "results": {
-            "<difficulty>": {
-                "details": [...]
-            }
-        }
-    }
+    Handles multiple formats:
+    1. New format with predictions array
+    2. Old format with details
+    3. Metrics-only format (no predictions array)
     """
     predictions = []
     ground_truth = []
@@ -143,21 +127,66 @@ def extract_predictions_from_results(results_data):
     if 'results' in results_data:
         results = results_data['results']
 
-        # Find the difficulty level (easy, medium, or hard)
-        for difficulty_key in ['easy', 'medium', 'hard']:
-            if difficulty_key in results:
-                # Try both 'predictions' and 'details' keys
-                items = results[difficulty_key].get('predictions',
-                                                     results[difficulty_key].get('details', []))
-
+        # Try all possible difficulty keys (including filename-based keys)
+        possible_keys = list(results.keys())
+        
+        for difficulty_key in possible_keys:
+            result_data = results[difficulty_key]
+            
+            # Check if predictions array exists
+            if 'predictions' in result_data and result_data['predictions']:
+                items = result_data['predictions']
+                
                 for item in items:
                     pred = normalize_label(item.get('prediction', ''))
                     gt = normalize_label(item.get('ground_truth', ''))
-
+                    
                     predictions.append(pred)
                     ground_truth.append(gt)
-
-                return predictions, ground_truth, difficulty_key
+                
+                # Extract difficulty from key
+                if 'easy' in difficulty_key.lower():
+                    difficulty = 'easy'
+                elif 'medium' in difficulty_key.lower():
+                    difficulty = 'medium'
+                elif 'hard' in difficulty_key.lower():
+                    difficulty = 'hard'
+                else:
+                    difficulty = difficulty_key
+                
+                return predictions, ground_truth, difficulty
+            
+            # Try 'details' key for old format
+            elif 'details' in result_data and result_data['details']:
+                items = result_data['details']
+                
+                for item in items:
+                    pred = normalize_label(item.get('prediction', ''))
+                    gt = normalize_label(item.get('ground_truth', ''))
+                    
+                    predictions.append(pred)
+                    ground_truth.append(gt)
+                
+                difficulty = difficulty_key
+                return predictions, ground_truth, difficulty
+            
+            # Format without predictions - return None
+            elif 'metrics' in result_data:
+                # Extract difficulty from key
+                if 'easy' in difficulty_key.lower():
+                    difficulty = 'easy'
+                elif 'medium' in difficulty_key.lower():
+                    difficulty = 'medium'
+                elif 'hard' in difficulty_key.lower():
+                    difficulty = 'hard'
+                else:
+                    difficulty = difficulty_key
+                
+                print(f"ℹ️  Results file contains metrics but no predictions array.")
+                print(f"   This is an older format or incomplete evaluation.")
+                print(f"   Displaying metrics from file only.\n")
+                
+                return None, None, difficulty
 
     raise ValueError("Could not extract predictions from results JSON. Invalid format.")
 
@@ -317,6 +346,37 @@ def analyze_single_file(results_file):
 
     # Extract predictions and ground truth from results
     predictions, ground_truth_from_results, difficulty = extract_predictions_from_results(results_data)
+
+    # If no predictions array, just display stored metrics
+    if predictions is None:
+        print(f"\n{'='*80}")
+        print(f"RESULTS FROM FILE: {results_file}")
+        print(f"Difficulty: {difficulty}")
+        print(f"{'='*80}")
+        
+        # Get the result data
+        result_key = list(results_data['results'].keys())[0]
+        result = results_data['results'][result_key]
+        
+        if 'metrics' in result:
+            metrics = result['metrics']
+            print(f"\nTotal samples: {result.get('total_samples', 'N/A')}")
+            print(f"Accuracy:      {metrics.get('accuracy', 0):.4f} ({metrics.get('accuracy', 0)*100:.2f}%)")
+            print(f"F1 (Macro):    {metrics.get('f1_macro', 0):.4f}")
+            print(f"F1 (Weighted): {metrics.get('f1_weighted', 0):.4f}")
+            
+            if 'confusion_matrix' in result:
+                cm = result['confusion_matrix']
+                print(f"\nConfusion Matrix:")
+                print("                Predicted")
+                print("                Full      Partial   Rejected")
+                print(f"Actual Full      {cm[0][0]:6,}    {cm[0][1]:6,}    {cm[0][2]:6,}")
+                print(f"      Partial    {cm[1][0]:6,}    {cm[1][1]:6,}    {cm[1][2]:6,}")
+                print(f"      Rejected   {cm[2][0]:6,}    {cm[2][1]:6,}    {cm[2][2]:6,}")
+            
+            print(f"\n{'='*80}\n")
+        
+        return None
 
     print(f"\nLoaded {len(predictions):,} predictions from {results_file}")
     print(f"Detected difficulty level: {difficulty}")
